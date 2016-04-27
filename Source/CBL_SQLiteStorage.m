@@ -472,6 +472,17 @@ DefineLogDomain(SQL);
         dbVersion = 101;
     }
 
+    if (dbVersion < 102) {
+        NSString *schema = @"\
+            ALTER TABLE docs ADD COLUMN expiry_timestamp INTEGER;\
+            CREATE INDEX IF NOT EXISTS docs_expiry ON docs(expiry_timestamp)\
+                WHERE expiry_timestamp not null;\
+            PRAGMA user_version = 102";
+        if (![self initialize: schema error: outError])
+            return NO;
+        dbVersion = 102;
+    }
+
     if (isNew && ![self initialize: @"END TRANSACTION" error: outError])
         return NO;
 
@@ -2298,6 +2309,35 @@ NSString* CBLJoinSQLQuotedStrings(NSArray* strings) {
     if ((NSUInteger)_fmdb.changes != seqsToPurge.count)
         Warn(@"purgeRevisions: Only %i sequences deleted of (%@)", _fmdb.changes, seqsString);
     return YES;
+}
+
+
+- (UInt64) expirationOfDocument: (NSString*)docID {
+    return [_fmdb longLongForQuery: @"SELECT expiry_timestamp FROM docs WHERE docid=?", docID];
+}
+
+
+- (BOOL) setExpiration: (UInt64)timestamp ofDocument: (NSString*)docID {
+    [_fmdb executeUpdate: @"UPDATE docs SET expiry_timestamp=? WHERE docid=?",
+                          (timestamp ? @(timestamp) : nil), docID];
+    return !_fmdb.hadError;
+}
+
+
+- (UInt64) nextDocumentExpiry {
+    return [_fmdb longLongForQuery: @"SELECT MIN(expiry_timestamp) FROM docs"
+                                     " WHERE expiry_timestamp not null"];
+}
+
+
+- (void) purgeExpiredDocuments {
+    LogTo(Database, @"Purging expired documents...");
+    NSNumber* now = @((UInt64)[NSDate date].timeIntervalSince1970);
+    [_fmdb executeUpdate: @"DELETE FROM revs WHERE doc_id IN ("
+            "SELECT doc_id FROM docs WHERE expiry_timestamp <= ?)", now];
+    LogTo(Database, @"Purged %d expired documents", _fmdb.changes);
+    [_fmdb executeUpdate: @"UPDATE docs SET expiry_timestamp=null WHERE expiry_timestamp <= ?",
+                          now];
 }
 
 

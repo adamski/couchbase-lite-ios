@@ -106,6 +106,19 @@ NSString* const kCBLDocumentChangeNotification = @"CBLDocumentChange";
 }
 
 
+- (NSDate*) expirationDate {
+    UInt64 timestamp = [_database.storage expirationOfDocument: self.documentID];
+    if (timestamp == 0)
+        return nil;
+    return [NSDate dateWithTimeIntervalSince1970: timestamp];
+}
+
+- (void) setExpirationDate: (NSDate*)date {
+    UInt64 timestamp = date ? (UInt64)date.timeIntervalSince1970 : 0;
+    [_database.storage setExpiration: timestamp ofDocument: self.documentID];
+}
+
+
 #pragma mark - REVISIONS:
 
 

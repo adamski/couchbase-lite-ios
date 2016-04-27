@@ -1514,6 +1514,9 @@
 }
 
 
+#pragma mark - ETC.
+
+
 - (void) test25_CloseDatabase {
     // Add some documents:
     for (NSUInteger i = 0; i < 10; i++) {
@@ -1540,6 +1543,76 @@
     [self keyValueObservingExpectationForObject: bgdb keyPath: @"isOpen" expectedValue: @(NO)];
     Assert([db close: &error], @"Cannot close the database: %@", error);
     [self waitForExpectationsWithTimeout: 1.0 handler: nil];
+}
+
+
+- (void) test26_DocumentExpiry {
+    if (!self.isSQLiteDB)
+        return; //FIXME: NEED FORESTDB IMPLEMENTATION
+    NSDate* future = [NSDate dateWithTimeIntervalSinceNow: 12345];
+    Log(@"Now is %@", [NSDate date]);
+    CBLDocument* doc = [self createDocumentWithProperties: @{@"foo": @17}];
+    AssertNil(doc.expirationDate);
+    doc.expirationDate = future;
+    NSDate* exp = doc.expirationDate;
+    Log(@"Doc expiration is %@", exp);
+    Assert(exp != nil);
+    Assert(fabs([exp timeIntervalSinceDate: future]) < 1.0);
+
+    NSDate* next = [NSDate dateWithTimeIntervalSince1970: db.storage.nextDocumentExpiry];
+    Log(@"Next expiration at %@", next);
+
+    doc.expirationDate = nil;
+    AssertNil(doc.expirationDate);
+
+    AssertEq(db.storage.nextDocumentExpiry, 0ull);
+
+    // Can a nonexistent document have an expiration date?
+    doc = db[@"foo"];
+    AssertNil(doc.expirationDate);
+    doc.expirationDate = future;
+    exp = doc.expirationDate;
+    Log(@"Nonexistent doc expiration is %@", exp);
+//    Assert(exp != nil);
+//    Assert(fabs(exp.timeIntervalSince1970 - now.timeIntervalSince1970) < 1.0);
+//    AssertEq(db.storage.nextDocumentExpiry, (UInt64)exp.timeIntervalSince1970);
+
+    [self createDocuments: 1000];
+    int total = 0, marked = 0;
+    for (CBLQueryRow* row in [[db createAllDocumentsQuery] run: NULL]) {
+        CBLDocument* doc = row.document;
+        int sequence = [doc[@"sequence"] intValue];
+        if (sequence % 10 == 6) {
+            doc.expirationDate = [NSDate dateWithTimeIntervalSinceNow: -1];
+            ++marked;
+        } else if (sequence % 10 == 3) {
+            doc.expirationDate = future;
+        }
+        ++total;
+    }
+    AssertEq(total, 1001);
+    AssertEq(marked, 100);
+
+    next = [NSDate dateWithTimeIntervalSince1970: db.storage.nextDocumentExpiry];
+    Log(@"Next expiration at %@", next);
+    Assert([next timeIntervalSinceNow] < 0);
+    Assert([next timeIntervalSinceNow] >= -10);
+
+    [db.storage purgeExpiredDocuments];
+    AssertEq(db.documentCount, 901u);
+
+    total = 0;
+    for (CBLQueryRow* row in [[db createAllDocumentsQuery] run: NULL]) {
+        CBLDocument* doc = row.document;
+        int sequence = [doc[@"sequence"] intValue];
+        Assert(sequence % 10 != 6);
+        ++total;
+    }
+    AssertEq(total, 901);
+
+    next = [NSDate dateWithTimeIntervalSince1970: db.storage.nextDocumentExpiry];
+    Log(@"Now next expiration is %@", next);
+    Assert(fabs([next timeIntervalSinceDate: future]) < 1.0);
 }
 
 @end

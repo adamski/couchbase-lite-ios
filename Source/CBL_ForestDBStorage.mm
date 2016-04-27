@@ -724,6 +724,26 @@ static CBLStatus selectRev(C4Document* doc, CBL_RevID* revID, BOOL withBody) {
 }
 
 
+- (UInt64) expirationOfDocument: (NSString*)docID {
+    return 0; //FIXME: IMPLEMENT
+}
+
+
+- (BOOL) setExpiration: (UInt64)timestamp ofDocument: (NSString*)docID {
+    return (timestamp==0); //FIXME: IMPLEMENT
+}
+
+
+- (UInt64) nextDocumentExpiry {
+    return 0; //FIXME: IMPLEMENT
+}
+
+
+- (void) purgeExpiredDocuments {
+    //FIXME: IMPLEMENT
+}
+
+
 #pragma mark - LOCAL DOCS:
 
 
