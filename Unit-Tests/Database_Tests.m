@@ -1577,29 +1577,39 @@
 //    Assert(fabs(exp.timeIntervalSince1970 - now.timeIntervalSince1970) < 1.0);
 //    AssertEq(db.storage.nextDocumentExpiry, (UInt64)exp.timeIntervalSince1970);
 
-    [self createDocuments: 1000];
-    int total = 0, marked = 0;
-    for (CBLQueryRow* row in [[db createAllDocumentsQuery] run: NULL]) {
-        CBLDocument* doc = row.document;
-        int sequence = [doc[@"sequence"] intValue];
-        if (sequence % 10 == 6) {
-            doc.expirationDate = [NSDate dateWithTimeIntervalSinceNow: -1];
-            ++marked;
-        } else if (sequence % 10 == 3) {
-            doc.expirationDate = future;
+    Log(@"Creating documents");
+    [self createDocuments: 10000];
+
+    Log(@"Marking docs for expiration");
+    __block int total = 0, marked = 0;
+    [db inTransaction:^BOOL{
+        for (CBLQueryRow* row in [[db createAllDocumentsQuery] run: NULL]) {
+            CBLDocument* doc = row.document;
+            int sequence = [doc[@"sequence"] intValue];
+            if (sequence % 10 == 6) {
+                doc.expirationDate = [NSDate dateWithTimeIntervalSinceNow: 2];
+                ++marked;
+            } else if (sequence % 10 == 3) {
+                doc.expirationDate = future;
+            }
+            ++total;
         }
-        ++total;
-    }
-    AssertEq(total, 1001);
-    AssertEq(marked, 100);
+        return YES;
+    }];
+    AssertEq(total, 10001);
+    AssertEq(marked, 1000);
 
     next = [NSDate dateWithTimeIntervalSince1970: db.storage.nextDocumentExpiry];
     Log(@"Next expiration at %@", next);
-    Assert([next timeIntervalSinceNow] < 0);
+    Assert([next timeIntervalSinceNow] <= 2);
     Assert([next timeIntervalSinceNow] >= -10);
 
-    [db.storage purgeExpiredDocuments];
-    AssertEq(db.documentCount, 901u);
+    Log(@"Waiting for auto-expiration...");
+    NSPredicate* expiredPred = [NSPredicate predicateWithFormat: @"documentCount <= 9001"];
+    (void)[self expectationForPredicate: expiredPred evaluatedWithObject: db handler: nil];
+    [self waitForExpectationsWithTimeout: 5.0 handler: nil];
+//    [db.storage purgeExpiredDocuments];
+    AssertEq(db.documentCount, 9001u);
 
     total = 0;
     for (CBLQueryRow* row in [[db createAllDocumentsQuery] run: NULL]) {
@@ -1608,7 +1618,7 @@
         Assert(sequence % 10 != 6);
         ++total;
     }
-    AssertEq(total, 901);
+    AssertEq(total, 9001);
 
     next = [NSDate dateWithTimeIntervalSince1970: db.storage.nextDocumentExpiry];
     Log(@"Now next expiration is %@", next);
