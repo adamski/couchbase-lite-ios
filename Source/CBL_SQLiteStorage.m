@@ -2311,6 +2311,7 @@ NSString* CBLJoinSQLQuotedStrings(NSArray* strings) {
                 if (![_fmdb executeUpdate: @"DELETE FROM docs WHERE doc_id=?", @(docNumericID)])
                     return self.lastDbError;
                 [self invalidateDocNumericID: docID];
+                [self notifyPurgedDocument: docID];
                 revsPurged = @[@"*"];
                 
             } else {
@@ -2404,15 +2405,36 @@ NSString* CBLJoinSQLQuotedStrings(NSArray* strings) {
 }
 
 
-- (void) purgeExpiredDocuments {
-    LogTo(Database, @"Purging expired documents...");
+- (NSUInteger) purgeExpiredDocuments {
+    __block NSUInteger nPurged = 0;
     [self inOuterTransaction: ^CBLStatus {
         NSNumber* now = @((UInt64)[NSDate date].timeIntervalSince1970);
         [self invalidateDocNumericIDs];
-        [_fmdb executeUpdate: @"DELETE FROM docs WHERE expiry_timestamp <= ?", now];
-        return self.lastDbStatus;
+
+        // First capture the docIDs to be purged, so we can notify about them:
+        NSMutableArray* purgedIDs = $marray();
+        CBL_FMResultSet* r = [_fmdb executeQuery:
+                              @"SELECT docid FROM docs WHERE expiry_timestamp <= ?", now];
+        while ([r next])
+            [purgedIDs addObject: [r stringForColumnIndex: 0]];
+        [r close];
+
+        // Now delete the docs:
+        if (![_fmdb executeUpdate: @"DELETE FROM docs WHERE expiry_timestamp <= ?", now])
+            return self.lastDbError;
+
+        // Finally notify:
+        for (NSString* docID in purgedIDs)
+            [self notifyPurgedDocument: docID];
+        nPurged = purgedIDs.count;
+        return kCBLStatusOK;
     }];
-    LogTo(Database, @"Purged %d expired documents", _fmdb.changes);
+    return nPurged;
+}
+
+
+- (void) notifyPurgedDocument: (NSString*)docID {
+    [_delegate databaseStorageChanged: [[CBLDatabaseChange alloc] initWithPurgedDocument: docID]];
 }
 
 

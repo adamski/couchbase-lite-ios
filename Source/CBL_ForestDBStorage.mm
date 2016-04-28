@@ -739,8 +739,8 @@ static CBLStatus selectRev(C4Document* doc, CBL_RevID* revID, BOOL withBody) {
 }
 
 
-- (void) purgeExpiredDocuments {
-    //FIXME: IMPLEMENT
+- (NSUInteger) purgeExpiredDocuments {
+    return 0; //FIXME: IMPLEMENT
 }
 
 

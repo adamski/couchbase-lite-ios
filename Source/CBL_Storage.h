@@ -227,7 +227,7 @@
 - (UInt64) nextDocumentExpiry;
 
 /** Triggers purging of documents whose expiration time has passed. */
-- (void) purgeExpiredDocuments;
+- (NSUInteger) purgeExpiredDocuments;
 
 // VIEWS:
 

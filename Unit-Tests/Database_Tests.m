@@ -1582,12 +1582,14 @@
 
     Log(@"Marking docs for expiration");
     __block int total = 0, marked = 0;
+    __block CBLDocument* someDoc = nil;
     [db inTransaction:^BOOL{
         for (CBLQueryRow* row in [[db createAllDocumentsQuery] run: NULL]) {
             CBLDocument* doc = row.document;
             int sequence = [doc[@"sequence"] intValue];
             if (sequence % 10 == 6) {
                 doc.expirationDate = [NSDate dateWithTimeIntervalSinceNow: 2];
+                someDoc = doc;
                 ++marked;
             } else if (sequence % 10 == 3) {
                 doc.expirationDate = future;
@@ -1604,11 +1606,42 @@
     Assert([next timeIntervalSinceNow] <= 2);
     Assert([next timeIntervalSinceNow] >= -10);
 
+    __block unsigned dbChangesReceived = 0;
+    [self expectationForNotification: kCBLDatabaseChangeNotification
+                              object: db
+                             handler: ^BOOL(NSNotification* notification) {
+                                 NSArray* changes = notification.userInfo[@"changes"];
+                                 NSUInteger purges = 0;
+                                 for (CBLDatabaseChange* change in changes) {
+                                     Assert(change.documentID);
+                                     if (!change.revisionID)
+                                         ++purges;
+                                 }
+                                 Log(@"Received %@ with %zu changes, %zu purges",
+                                     notification.name, changes.count, purges);
+                                 dbChangesReceived += purges;
+                                 Assert(dbChangesReceived <= 1000);
+                                 return (dbChangesReceived >= 1000);
+                             }];
+
+    Assert(someDoc.currentRevision != nil);
+    [self expectationForNotification: kCBLDocumentChangeNotification
+                              object: someDoc
+                             handler: ^BOOL(NSNotification* notification) {
+                                 Log(@"Received %@", notification);
+                                 CBLDatabaseChange* change = notification.userInfo[@"change"];
+                                 Assert(change);
+                                 AssertEqual(change.documentID, someDoc.documentID);
+                                 AssertNil(change.revisionID);
+                                 AssertNil(someDoc.currentRevision);
+                                 return YES;
+                             }];
+
     Log(@"Waiting for auto-expiration...");
     NSPredicate* expiredPred = [NSPredicate predicateWithFormat: @"documentCount <= 9001"];
     (void)[self expectationForPredicate: expiredPred evaluatedWithObject: db handler: nil];
+
     [self waitForExpectationsWithTimeout: 5.0 handler: nil];
-//    [db.storage purgeExpiredDocuments];
     AssertEq(db.documentCount, 9001u);
 
     total = 0;
