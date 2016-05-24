@@ -41,7 +41,7 @@ Pod::Spec.new do |s|
     ss.vendored_frameworks = 'CouchbaseLiteListener.framework'
   end
 
-  s.subspec 'JSViewCompiler' do |ss|
-    ss.source_files = 'Extras/CBLJSViewCompiler.h'
+  s.subspec 'RegisterJSViewCompiler' do |ss|
+    ss.source_files = 'Extras/CBLRegisterJSViewCompiler.h'
   end
 end
